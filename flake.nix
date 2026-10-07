@@ -1,14 +1,40 @@
 {
-  description = "ynab-mcp development environment";
+  description = "ynab-mcp package, offline checks, NixOS service, and development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { nixpkgs, ... }:
+  outputs = { self, nixpkgs, ... }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      # Preserve the original shell outputs. The pinned upstream no longer
+      # provides legacyPackages.x86_64-darwin; see docs/nix.md.
+      devSystems = systems ++ [ "x86_64-darwin" ];
+      forSystems = nixpkgs.lib.genAttrs systems;
     in
     {
-      devShells = nixpkgs.lib.genAttrs systems (system:
+      packages = forSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          package = pkgs.callPackage ./pkgs/ynab-mcp { };
+        in
+        {
+          default = package;
+          ynab-mcp = package;
+        });
+
+      nixosModules.default = { pkgs, lib, ... }: {
+        imports = [ ./modules/nixos/ynab-mcp.nix ];
+        services.ynab-mcp.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.ynab-mcp;
+      };
+
+      checks = forSystems (system:
+        import ./checks {
+          pkgs = nixpkgs.legacyPackages.${system};
+          package = self.packages.${system}.ynab-mcp;
+          module = self.nixosModules.default;
+        });
+
+      devShells = nixpkgs.lib.genAttrs devSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in

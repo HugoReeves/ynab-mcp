@@ -24,6 +24,7 @@ let
       ../../src/errors.ts
       ../../src/index.ts
       ../../src/runtime/dispatcher.ts
+      ../../src/runtime/http.ts
       ../../src/runtime/protocol.ts
       ../../src/runtime/server.ts
       ../../src/safety/dates.ts
@@ -63,6 +64,7 @@ let
       ../../tests/runtime/cli.test.ts
       ../../tests/runtime/dispatcher.test.ts
       ../../tests/runtime/generate-types.test.ts
+      ../../tests/runtime/http-cli.test.ts
       ../../tests/runtime/independent-boundaries.test.ts
       ../../tests/runtime/independent-cli.test.ts
       ../../tests/runtime/protocol.test.ts
@@ -73,6 +75,8 @@ let
       ../../tests/transactions/TDD.md
       ../../tests/transactions/independent.test.ts
       ../../tests/transactions/transactions.test.ts
+      ../../tests/transport-http/fixtures.ts
+      ../../tests/transport-http/http.test.ts
       ../../tsconfig.build.json
       ../../tsconfig.json
       ../../vitest.config.ts
@@ -87,11 +91,13 @@ in
   npmDepsHash = "sha256-xxKubvz1m5KL4qdcapBnf9ImpAiiSopfV0HqhlixX7U=";
   npmBuildScript = "build";
 
+  passthru.nodejs = nodejs_24;
+
   # The standard hooks install offline, pack the package.json whitelist, prune
   # development dependencies, and wrap the executable with this pinned Node.
   meta = {
     description = "Model Context Protocol server for YNAB";
     mainProgram = "ynab-mcp";
-    platforms = lib.platforms.linux ++ lib.platforms.darwin;
+    platforms = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
   };
 }

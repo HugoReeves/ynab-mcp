@@ -1,0 +1,38 @@
+name: Offline Nix checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source without stored credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Nix on the ephemeral runner
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31 (resolved tag)
+        with:
+          # Permission changes apply only to this disposable GitHub runner.
+          # The NixOS test also supports TCG when KVM is unavailable.
+          enable_kvm: true
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            sandbox = true
+      - name: Run offline sandbox checks, including the NixOS VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          lock_before="$(sha256sum flake.lock)"
+          nix flake check --no-write-lock-file --print-build-logs
+          nix build --no-write-lock-file
+          nix run --no-write-lock-file . -- --help
+          test "$lock_before" = "$(sha256sum flake.lock)"
+          git diff --exit-code -- flake.lock

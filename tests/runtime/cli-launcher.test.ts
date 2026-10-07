@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -10,12 +10,18 @@ it('launches from another cwd with no Node in PATH, absolute repo paths, and exp
   try {
     mkdirSync(join(directory, 'scripts')); mkdirSync(join(directory, 'bin'));
     copyFileSync(join(root, 'scripts/run-local.sh'), join(directory, 'scripts/run-local.sh'));
+    // Nix sandboxes have no /usr/bin/env. Keep ordinary development discovery.
+    const bash = process.env.NIX_TEST_BASH ?? execFileSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).trim();
+    if (process.env.NIX_TEST_BASH) {
+      const launcher = join(directory, 'scripts/run-local.sh');
+      writeFileSync(launcher, readFileSync(launcher, 'utf8').replace(/^#![^\n]+/, `#!${bash}`));
+    }
     for (const name of ['bash', 'dirname']) {
-      const executable = execFileSync('bash', ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
+      const executable = name === 'bash' ? bash : execFileSync(bash, ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
       symlinkSync(executable, join(directory, 'bin', name));
     }
     // A recording Nix stand-in: no Node/global runtime, token, or env file is read.
-    writeFileSync(join(directory, 'bin/nix'), '#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+    writeFileSync(join(directory, 'bin/nix'), `#!${bash}\nprintf "%s\\n" "$@"\n`, { mode: 0o755 });
     const env = { PATH: join(directory, 'bin'), HOME: directory };
     const serve = spawnSync(join(directory, 'scripts/run-local.sh'), [], { cwd: tmpdir(), env, encoding: 'utf8' });
     expect(serve.status).toBe(0); expect(serve.stderr).toBe('');

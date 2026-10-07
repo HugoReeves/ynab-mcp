@@ -10,12 +10,13 @@ Third-party dependencies and the pinned YNAB API specification retain their orig
 This server can change or delete financial records. Start with a separate test plan,
 restrict the plan allowlist, and keep writes disabled until you have reviewed the behaviour.
 
-Local **0.1.0** stdio MCP adapter for YNAB, using API-native `plan` terminology.
+Local **0.1.0** MCP adapter for YNAB, using API-native `plan` terminology.
+Stdio is the default transport. Optional HTTP listens only on loopback.
 Node.js 24; exact server/client SDK 2.3.1 pins. Legacy `2025-11-25` and modern
 `2026-07-28` exchanges are tested with the official client in subprocesses.
 
-**Implemented:** all 35 tools. The full build and 951 offline tests pass,
-including independent route contracts and subprocess transport tests.
+**Implemented:** all 35 tools. Offline checks cover the full build,
+independent route contracts, subprocess stdio, and loopback HTTP fixtures.
 See [implementation status](docs/implementation-status.md) for release and live-validation results.
 
 ## Install and check
@@ -28,7 +29,19 @@ npm run build
 npm run check
 ```
 
-Without globally installed Node, Nix supplies Node/npm and hook tools:
+Build or run the pinned Nix package without global Node/npm or checkout dependencies:
+
+```sh
+nix build
+nix run . -- --help
+nix flake check --no-write-lock-file
+```
+
+Nix exports packages for x86_64 Linux, aarch64 Linux, and aarch64 Darwin.
+See [Nix packaging and NixOS service](docs/nix.md) for checks, runtime secrets,
+and the upstream pin's legacy Intel Darwin shell limitation.
+
+For development, Nix supplies Node/npm and hook tools:
 
 ```sh
 nix develop -c npm ci
@@ -74,7 +87,22 @@ node --env-file=/absolute/path/to/ynab-mcp/.env /absolute/path/to/ynab-mcp/dist/
 
 `npm start` runs the built stdio entry. The package `ynab-mcp` bin points to that
 same shebang-equipped entry. `--help` and `--version` need no credentials; the
-Nix launcher also skips env-file loading for those flags. Build before launching.
+Nix launcher also skips env-file loading for those flags. Build before launching
+from source. `nix run .` uses the built package and never loads `.env`.
+
+For loopback HTTP, supply credentials through the process environment, then run:
+
+```sh
+nix run . -- --transport http
+# With a source build instead:
+node /absolute/path/to/ynab-mcp/dist/index.js --transport http
+```
+
+`YNAB_HOST` defaults to `127.0.0.1`; `YNAB_PORT` defaults to `3000`.
+The endpoint is `/mcp`. HTTP has **no built-in authentication**. Other local users
+can access it. An external proxy must provide authentication, TLS, access policy,
+and compatible backend headers. Do not publish an unauthenticated proxy.
+See [NixOS service configuration](docs/nix.md#nixos-service) for safe defaults.
 Nix shell-hook diagnostics and sanitized startup errors go to stderr, never MCP
 stdout. EOF, SIGINT, and SIGTERM close the connection cleanly.
 
