@@ -57,3 +57,23 @@ with subtest("runtime cleanup and missing credential fail closed"):
     machine.succeed("systemctl reset-failed ynab-mcp; systemctl start ynab-mcp")
     machine.wait_for_open_port(3000)
     machine.succeed("python3 /etc/ynab-mcp-test/probe.py")
+
+with subtest("existing independent HTTP regressions execute without skips"):
+    machine.succeed("/etc/ynab-mcp-test/run-http-fixtures", timeout=600)
+    report = json.loads(machine.succeed("cat /run/ynab-http-results.json"))
+    assert report["success"], report
+    assert report["numTotalTests"] == report["numPassedTests"] == 19, report
+    assert report["numPendingTests"] == report["numTodoTests"] == report["numFailedTests"] == 0, report
+    assert len(report["testResults"]) == 1, report
+    results = report["testResults"][0]
+    assert results["name"].endswith("/tests/transport-http/independent.test.ts"), results
+    assertions = results["assertionResults"]
+    assert len(assertions) == 19 and all(test["status"] == "passed" for test in assertions), assertions
+    # Verify all five gated cases, not just the overall count or exit code.
+    for prefix, count in [
+        ("accepts HTTP default port 80 with ", 2),
+        ("accepts IPv6 default-port Host equivalents and canonical Origin", 1),
+        ("retains strict default-port header validation on ", 2),
+    ]:
+        assert sum(test["title"].startswith(prefix) for test in assertions) == count, assertions
+    print("Independent HTTP regressions: 19 passed, 0 skipped; all 5 gated default-port cases passed")

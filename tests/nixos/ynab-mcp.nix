@@ -1,6 +1,6 @@
 # Wire to a flake check with the real HTTP-capable package, never a stub.
 # This pinned test driver supports kvm:tcg; no /dev/kvm is required.
-{ pkgs, package, module }:
+{ pkgs, package, module, httpTestFixture }:
 pkgs.testers.runNixOSTest {
   name = "ynab-mcp";
   requiredFeatures.kvm = false;
@@ -22,6 +22,20 @@ pkgs.testers.runNixOSTest {
     networking.firewall.enable = false;
     environment.systemPackages = [ pkgs.python3 pkgs.nftables pkgs.iproute2 ];
     environment.etc."ynab-mcp-test/probe.py".source = ./probe.py;
+    # Only the isolated guest root runs these existing Vitest regressions.
+    # Copy the test-only artifact before Vitest writes its cache and report.
+    environment.etc."ynab-mcp-test/run-http-fixtures".source = pkgs.writeShellScript "run-http-fixtures" ''
+      set -euo pipefail
+      work=$(${pkgs.coreutils}/bin/mktemp -d /run/ynab-http-tests.XXXXXX)
+      ${pkgs.coreutils}/bin/cp -R ${httpTestFixture}/. "$work/"
+      ${pkgs.coreutils}/bin/chmod -R u+w "$work"
+      cd "$work"
+      YNAB_TEST_ISOLATED_NETWORK=1 ${pkgs.nodejs_24}/bin/node node_modules/vitest/vitest.mjs run \
+        tests/transport-http/independent.test.ts --maxWorkers=1 \
+        --reporter=default --reporter=json --outputFile=results.json
+      ${pkgs.coreutils}/bin/cp results.json /run/ynab-http-results.json
+      ${pkgs.coreutils}/bin/chmod 600 /run/ynab-http-results.json
+    '';
     systemd.services.ynab-test-credential = {
       description = "Generate fake test credential only at VM runtime";
       wantedBy = [ "multi-user.target" ];

@@ -123,18 +123,26 @@ Importing the raw module instead uses its fallback package from the consuming sy
 | `http-fixtures` | All `tests/transport-http` fixtures and HTTP CLI tests; no outbound YNAB |
 | `nixos-safe-defaults` (Linux) | Module options, assertions, policy, credentials, and hardening |
 | `module-package` (Linux) | Flake package default and direct package override |
-| `nixos-service` (Linux) | Real packaged service startup and runtime security checks in a NixOS VM |
+| `nixos-service` (Linux) | Real packaged service startup, runtime security checks, and existing independent HTTP regressions in a NixOS VM |
 
-On Linux, `offline` and `http-fixtures` create a nested unprivileged user/network namespace inside the Nix sandbox.
-The helper verifies a single non-root UID mapping, loopback-only interfaces, and IPv4/IPv6 port-80 binds.
-It then sets `YNAB_TEST_ISOLATED_NETWORK=1`, so all five default-port regressions run automatically.
-The full Linux suite has **1,044 tests**, with no skips. The focused HTTP suite has **93 tests**.
-Each isolated command has a ten-minute deadline. A failed namespace or bind check fails the build.
-The helper does not silently skip tests.
-No host sysctl, capability, or privilege changes occur. The ordinary sandbox's non-root port-80 probe returned `EACCES`.
+`offline` and `http-fixtures` run ordinary npm commands inside the normal Nix sandbox.
+The full native suite reports **1,039 passed and 5 skipped**. The focused HTTP suite reports **88 passed and 5 skipped**.
+The five gated default-port cases cannot safely bind port 80 in ordinary native checks.
+Nested user namespaces are not required: CI runners can deny writes to `/proc/self/uid_map`.
 
-Darwin checks do not use Linux namespaces. Their five gated port-80 tests remain skipped.
-The other tests still run. Native aarch64 builds require a matching builder; evaluation alone does not prove they pass.
+On Linux, the isolated NixOS VM runs the existing `tests/transport-http/independent.test.ts` with `YNAB_TEST_ISOLATED_NETWORK=1`.
+Guest root can safely bind IPv4 and IPv6 port 80 without touching host services.
+All **19 independent HTTP tests pass with zero skips**, including the exact five gated default-port regressions.
+The VM verifies the JSON report, test file, total count, passed statuses, and all five gated case names.
+A missing test, skip, bind failure, or ten-minute timeout fails the VM check.
+The test-only artifact uses the allowlisted source and pinned development dependencies from the offline npm cache.
+Vitest uses pinned Node and one worker in a private writable guest directory. VM startup does not install npm dependencies.
+The production service still runs the immutable built package without development dependencies.
+Guest networking remains restricted; these tests use fake connections and never call YNAB.
+No host sysctl, capability, CI privilege, or security-setting changes are required.
+
+Darwin checks also skip the five gated cases; the other tests still run.
+Native aarch64 builds require a matching builder; evaluation alone does not prove they pass.
 
 Run an individual check with, for example:
 
