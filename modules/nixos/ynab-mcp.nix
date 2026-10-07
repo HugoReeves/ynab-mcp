@@ -9,6 +9,7 @@ let
     && !(lib.hasPrefix "/nix/store/" source)
     && !(lib.hasInfix "\n" source) && !(lib.hasInfix "\r" source)
     && !(lib.hasInfix "//" source) && !(lib.hasInfix "%" source)
+    && !(lib.hasInfix "\\" source)
     && lib.all (part: part != "." && part != "..") (lib.splitString "/" source);
 in
 {
@@ -68,7 +69,7 @@ in
       }
       {
         assertion = safeSource;
-        message = "services.ynab-mcp.accessTokenFile must be an absolute string outside /nix/store, without dot segments or newlines.";
+        message = "services.ynab-mcp.accessTokenFile must be an absolute string outside /nix/store, without dot segments, repeated slashes, percent signs, backslashes, newlines, or carriage returns.";
       }
     ];
 
