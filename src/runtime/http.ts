@@ -38,7 +38,7 @@ function reject(req: IncomingMessage, res: ServerResponse, status: number): void
 }
 
 /** Validate raw headers BEFORE constructing a URL or coalescing headers with Headers. */
-function checkHeaders(req: IncomingMessage, authority: string): number | undefined {
+function checkHeaders(req: IncomingMessage, authority: string, url: URL): number | undefined {
   if (req.rawHeaders.length > HTTP_LIMITS.maxHeaders * 2) return 400;
   const seen = new Set<string>();
   for (let i = 0; i < req.rawHeaders.length; i += 2) {
@@ -46,8 +46,10 @@ function checkHeaders(req: IncomingMessage, authority: string): number | undefin
     if (seen.has(name)) return 400;
     seen.add(name);
   }
-  if (req.headers.host !== authority) return 403;
-  if (req.headers.origin !== undefined && req.headers.origin !== `http://${authority}`) return 403;
+  // The locally constructed URL omits :80 only for an actual HTTP port-80 listener.
+  // Accept that canonical Host or the explicit listener authority, without parsing input.
+  if (req.headers.host !== authority && req.headers.host !== url.host) return 403;
+  if (req.headers.origin !== undefined && req.headers.origin !== url.origin) return 403;
   return undefined;
 }
 
@@ -63,9 +65,10 @@ export async function startHttp(connection: Connection, options: HttpOptions = r
   const sockets = new Set<Socket>();
   let closing = false;
   let authority = '';
+  let url: URL;
   const serve = async (req: IncomingMessage, res: ServerResponse) => {
     if (closing || exchanges.size >= HTTP_LIMITS.maxExchanges) { reject(req, res, 503); return; }
-    const status = checkHeaders(req, authority);
+    const status = checkHeaders(req, authority, url);
     if (status) { reject(req, res, status); return; }
     // Only the literal origin-form route is supported; no absolute URLs or normalized aliases.
     if (req.url !== '/mcp') { reject(req, res, 404); return; }
@@ -160,5 +163,6 @@ export async function startHttp(connection: Connection, options: HttpOptions = r
   } catch { await close(); throw new Error('Unable to start HTTP transport.'); }
   const address = server.address() as AddressInfo;
   authority = `${options.host === '::1' ? '[::1]' : options.host}:${address.port}`;
-  return { address, url: new URL(`http://${authority}/mcp`), close };
+  url = new URL(`http://${authority}/mcp`);
+  return { address, url, close };
 }

@@ -84,3 +84,30 @@ it.for(['canonical Host', 'explicit Host and canonical Origin'])('accepts HTTP d
     } finally { await c.close(); }
   }
 });
+
+it('accepts IPv6 default-port Host equivalents and canonical Origin', async context => {
+  if (process.env.YNAB_TEST_ISOLATED_NETWORK !== '1') context.skip();
+  const h = await startHttp(fixture().connection, { host: '::1', port: 80 }); handles.push(h);
+  expect(h.url.href).toBe('http://[::1]/mcp');
+  for (const host of ['[::1]', '[::1]:80']) {
+    expect(await wire(h, '/mcp', `Origin: ${h.url.origin}\r\n`, '{}', host)).toMatch(/^HTTP\/1\.1 400 /);
+  }
+});
+
+it.for(['127.0.0.1', '::1'])('retains strict default-port header validation on %s', async (host, context) => {
+  if (process.env.YNAB_TEST_ISOLATED_NETWORK !== '1') context.skip();
+  const f = fixture(); const h = await startHttp(f.connection, { host, port: 80 }); handles.push(h);
+  for (const authority of [`${h.url.hostname}:81`, `${h.url.hostname}:080`, 'localhost', 'evil.test']) {
+    expect(await wire(h, '/mcp', '', '{}', authority)).toMatch(/^HTTP\/1\.1 403 /);
+  }
+  for (const origin of [
+    `${h.url.origin}:81`, `${h.url.origin}:80`, `${h.url.origin}/`, `${h.url.origin}/mcp`,
+    `${h.url.origin}?query`, `${h.url.origin}#fragment`, h.url.origin.replace('http:', 'https:'),
+    `http://user@${h.url.host}`, 'http://evil.test', 'null',
+  ]) {
+    expect(await wire(h, '/mcp', `Origin: ${origin}\r\n`)).toMatch(/^HTTP\/1\.1 403 /);
+  }
+  expect(await wire(h, '/mcp', `Origin: ${h.url.origin}\r\noRiGiN: ${h.url.origin}\r\n`)).toMatch(/^HTTP\/1\.1 400 /);
+  expect(await wire(h, '/mcp/', `Origin: ${h.url.origin}\r\n`)).toMatch(/^HTTP\/1\.1 404 /);
+  expect(f.requests).toHaveLength(0);
+});
