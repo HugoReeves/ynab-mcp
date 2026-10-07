@@ -44,6 +44,8 @@ let
     traversalCredential = rejects { accessTokenFile = "/run/../nix/store/token"; };
     doubleSlashCredential = rejects { accessTokenFile = "//nix/store/token"; };
     specifierCredential = rejects { accessTokenFile = "/run/%d/token"; };
+    trailingBackslashCredential = rejects { accessTokenFile = "/run/token\\"; };
+    embeddedBackslashCredential = rejects { accessTokenFile = "/run/to\\ken"; };
     multiplePlans = (evaluate (valid // { allowedPlanIds = [ id id ]; })).systemd.services.ynab-mcp.environment.YNAB_ALLOWED_PLAN_IDS == "${id},${id}";
     newlineCredential = rejects { accessTokenFile = "/run/token\nother"; };
     pathNotString = !(evaluates (evaluate { accessTokenFile = ./evaluation.nix; }).services.ynab-mcp.accessTokenFile);
@@ -86,6 +88,7 @@ let
       && unit.RestrictAddressFamilies == [ "AF_UNIX" "AF_INET" "AF_INET6" ]
       && unit.ProtectKernelTunables && unit.ProtectKernelModules
       && unit.ProtectKernelLogs && unit.ProtectControlGroups
+      && unit.LockPersonality
       && !(unit.MemoryDenyWriteExecute or false);
     limits = unit.MemoryMax == "512M" && unit.TasksMax == 64;
     noFirewall = cfg.networking.firewall.allowedTCPPorts == [ ];
