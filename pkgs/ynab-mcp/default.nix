@@ -77,6 +77,7 @@ let
       ../../tests/transactions/transactions.test.ts
       ../../tests/transport-http/fixtures.ts
       ../../tests/transport-http/http.test.ts
+      ../../tests/transport-http/independent.test.ts
       ../../tsconfig.build.json
       ../../tsconfig.json
       ../../vitest.config.ts

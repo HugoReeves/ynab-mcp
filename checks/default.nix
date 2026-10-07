@@ -1,15 +1,30 @@
 { pkgs, package, module }:
 
+let
+  # Ordinary Nix build users cannot bind port 80. A nested unprivileged user/net
+  # namespace exercises the gated IPv4/IPv6 regressions without host changes.
+  isolatedCheck = arguments: ''
+    ${pkgs.nodejs_24}/bin/node ${../scripts/check-nix-isolated-network.mjs} \
+      ${pkgs.util-linux}/bin/unshare ${pkgs.iproute2}/bin/ip \
+      ${pkgs.nodejs_24}/bin/npm ${arguments}
+  '';
+in
 {
   inherit package;
 
   # buildNpmPackage's fixed-output dependency cache is fetched separately.
   # All check phases run in the network-isolated sandbox, with writable .cache.
-  offline = package.overrideAttrs {
+  offline = package.overrideAttrs ({
     pname = "ynab-mcp-offline-check";
     npmBuildScript = "check";
     NIX_TEST_BASH = pkgs.lib.getExe pkgs.bash;
-  };
+  } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+    buildPhase = ''
+      runHook preBuild
+      ${isolatedCheck "run check"}
+      runHook postBuild
+    '';
+  });
 
   http-fixtures =
     let
@@ -30,7 +45,11 @@
         test -f src/runtime/http.ts
         test -f tests/runtime/http-cli.test.ts
         test -d tests/transport-http
-        npm run test -- tests/transport-http tests/runtime/http-cli.test.ts
+        ${if pkgs.stdenv.hostPlatform.isLinux then
+          isolatedCheck "run test -- tests/transport-http tests/runtime/http-cli.test.ts"
+        else
+          "npm run test -- tests/transport-http tests/runtime/http-cli.test.ts"
+        }
         npm run build
         runHook postBuild
       '';

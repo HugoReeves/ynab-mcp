@@ -31,6 +31,7 @@ Add every new application/test input to `pkgs/ynab-mcp/default.nix`; do not omit
 Nix can download pinned sources, binary substitutes, and the fixed-hash npm dependency cache.
 After dependency acquisition, checks run offline in the Nix sandbox. They use fake tokens and local fixtures only.
 They never call live YNAB. `.cache` is writable in the build tree, not in the installed package.
+The HTTP manifest check rejects omitted fixture inputs instead of silently skipping merged tests.
 
 ### Transport and credentials
 
@@ -123,6 +124,17 @@ Importing the raw module instead uses its fallback package from the consuming sy
 | `nixos-safe-defaults` (Linux) | Module options, assertions, policy, credentials, and hardening |
 | `module-package` (Linux) | Flake package default and direct package override |
 | `nixos-service` (Linux) | Real packaged service startup and runtime security checks in a NixOS VM |
+
+On Linux, `offline` and `http-fixtures` create a nested unprivileged user/network namespace inside the Nix sandbox.
+The helper verifies a single non-root UID mapping, loopback-only interfaces, and IPv4/IPv6 port-80 binds.
+It then sets `YNAB_TEST_ISOLATED_NETWORK=1`, so all five default-port regressions run automatically.
+The full Linux suite has **1,044 tests**, with no skips. The focused HTTP suite has **93 tests**.
+Each isolated command has a ten-minute deadline. A failed namespace or bind check fails the build.
+The helper does not silently skip tests.
+No host sysctl, capability, or privilege changes occur. The ordinary sandbox's non-root port-80 probe returned `EACCES`.
+
+Darwin checks do not use Linux namespaces. Their five gated port-80 tests remain skipped.
+The other tests still run. Native aarch64 builds require a matching builder; evaluation alone does not prove they pass.
 
 Run an individual check with, for example:
 
