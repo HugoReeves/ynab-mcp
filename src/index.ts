@@ -8,7 +8,7 @@ import { createConnection } from './config.js';
 export const VERSION = '0.1.0';
 // 1 MiB tool arguments plus bounded JSON-RPC/envelope overhead. SDK bounds bytes before decoding.
 export const MAX_STDIO_BUFFER_BYTES = 2 * 1024 * 1024;
-const USAGE = 'Usage: ynab-mcp [--help | --version]\nServe MCP over stdio using explicitly supplied YNAB environment configuration.\n';
+const USAGE = 'Usage: ynab-mcp [--help | --version | --transport stdio|http]\nServe MCP over stdio (default) or loopback-only HTTP using explicitly supplied YNAB environment configuration.\n';
 
 /** Injectable transport entry for offline fixtures; production composition stays in createServer. */
 export function startStdio(factory: () => Server): StdioServerHandle {
@@ -44,12 +44,36 @@ export function startStdio(factory: () => Server): StdioServerHandle {
 export async function runCli(args: readonly string[] = process.argv.slice(2)): Promise<void> {
   if (args.length === 1 && args[0] === '--help') { process.stdout.write(USAGE); return; }
   if (args.length === 1 && args[0] === '--version') { process.stdout.write(`${VERSION}\n`); return; }
-  if (args.length) { process.stderr.write(USAGE); process.exitCode = 2; return; }
+  let transport = 'stdio';
+  if (args.length === 2 && args[0] === '--transport' && ['stdio', 'http'].includes(args[1]!)) transport = args[1]!;
+  else if (args.length) { process.stderr.write(USAGE); process.exitCode = 2; return; }
   try {
     // No dotenv/automatic file loading. Only the explicit local launcher uses Node --env-file.
-    const connection = await createConnection(process.env);
-    const { createServer } = await import('./runtime/server.js');
-    startStdio(() => createServer(connection));
+    if (transport === 'http') {
+      const { readHttpOptions, startHttp } = await import('./runtime/http.js');
+      const options = readHttpOptions(process.env);
+      const connection = await createConnection(process.env);
+      let handle: Awaited<ReturnType<typeof startHttp>> | undefined;
+      let stopping = false;
+      const stop = () => {
+        if (stopping) return;
+        stopping = true;
+        process.off('SIGINT', stop); process.off('SIGTERM', stop);
+        void handle?.close().catch(() => { process.stderr.write('YNAB MCP transport failed.\n'); process.exitCode = 1; });
+      };
+      process.on('SIGINT', stop); process.on('SIGTERM', stop);
+      try {
+        handle = await startHttp(connection, options);
+        if (stopping) await handle.close();
+        else process.stderr.write(`YNAB MCP HTTP ready at ${handle.url.href}\n`);
+      } catch {
+        process.off('SIGINT', stop); process.off('SIGTERM', stop); throw new Error('Unable to start HTTP transport.');
+      }
+    } else {
+      const connection = await createConnection(process.env);
+      const { createServer } = await import('./runtime/server.js');
+      startStdio(() => createServer(connection));
+    }
   } catch {
     process.stderr.write('YNAB MCP startup failed. Check configuration and installation.\n');
     process.exitCode = 1;

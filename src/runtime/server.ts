@@ -7,14 +7,25 @@ import { createMaintenanceTools } from '../tools/maintenance.js';
 import { createDispatcher } from './dispatcher.js';
 import { createProtocolServer } from './protocol.js';
 
-export function createServer(connection: Connection, clock: Clock = { now: () => Date.now() }): Server {
-  const services: Services = {
+/** One process owns one API, policy scope, cache, cursor store, and plan-lock table. */
+export function createServices(connection: Connection, clock: Clock = { now: () => Date.now() }): Services {
+  return {
     config: connection.config, api: connection.api, clock,
     state: createSafetyState(connection.config, connection.api, clock),
   };
-  return createProtocolServer(createDispatcher(services, {
+}
+
+/** Reuse the dispatcher, never a connected protocol Server, across HTTP exchanges. */
+export function createServerFactory(connection: Connection, clock?: Clock): () => Server {
+  const services = createServices(connection, clock);
+  const dispatcher = createDispatcher(services, {
     ...createReadTools(services),
     ...createTransactionTools(services),
     ...createMaintenanceTools(services),
-  }));
+  });
+  return () => createProtocolServer(dispatcher);
+}
+
+export function createServer(connection: Connection, clock?: Clock): Server {
+  return createServerFactory(connection, clock)();
 }
