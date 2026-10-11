@@ -27,7 +27,16 @@ describe('loopback HTTP transport', () => {
     try {
       expect(c.getServerVersion()).toEqual({ name: 'ynab-mcp', version: '0.1.0' });
       expect((await c.listTools()).tools.map(t => t.name)).toContain('ynab_get_user');
-      for (let i = 0; i < 2; i++) expect((await c.callTool({ name: 'ynab_get_user', arguments: {} })).structuredContent).toMatchObject({ status: 'ok', data: { user: { id } } });
+      for (let i = 0; i < 2; i++) {
+        const reply = await c.callTool({ name: 'ynab_get_user', arguments: {} });
+        expect(reply.structuredContent).toMatchObject({ status: 'ok', data: { user: { id } } });
+        const block = reply.content[0];
+        expect(block.type).toBe('text');
+        if (block.type !== 'text') throw new Error('Expected text content');
+        const textOnlyResult = JSON.parse(block.text);
+        expect(textOnlyResult).toMatchObject({ status: 'ok', data: { user: { id } } });
+        expect(textOnlyResult).toEqual(reply.structuredContent);
+      }
       expect(f.requests).toEqual([{ method: 'GET', path: '/user' }]);
     } finally { await c.close(); }
   });

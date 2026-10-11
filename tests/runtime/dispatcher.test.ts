@@ -10,8 +10,23 @@ function errorCode(reply: DispatchResult) {
   return (reply.structuredContent as Extract<ToolResult, { status: 'error' }>).error.code;
 }
 
+function expectMatchingText(reply: DispatchResult) {
+  expect(reply.content).toHaveLength(1);
+  const block = reply.content[0];
+  expect(block.type).toBe('text');
+  if (block.type !== 'text') throw new Error('Expected text content');
+  expect(JSON.parse(block.text)).toEqual(reply.structuredContent);
+  expect(block.text).toBe(JSON.stringify(reply.structuredContent));
+}
+
 afterEach(() => vi.useRealTimers());
 describe('bounded dispatcher', () => {
+  it('returns matching validated JSON text for successful results', async () => {
+    const reply = await createDispatcher(fakeServices(), { ynab_get_user: async () => ok }).callTool('ynab_get_user', {});
+    expect(reply.structuredContent).toEqual(ok);
+    expect(reply.isError).toBe(false);
+    expectMatchingText(reply);
+  });
   it('discovers policy-approved catalog definitions and rejects hidden/unknown direct calls', async () => {
     const services = fakeServices();
     const handler = vi.fn(async () => ok);
@@ -71,6 +86,7 @@ describe('bounded dispatcher', () => {
     } });
     const reply = await d.callTool('ynab_create_account', { account: { name: 'Fixture', type: 'checking', balance: 0 } });
     expect(reply.structuredContent).toEqual(preview); expect(reply.isError).toBe(false);
+    expectMatchingText(reply);
   });
   it('bounds inputs before validation and safely handles unserializable values', async () => {
     const handler = vi.fn(async () => ok); const d = createDispatcher(fakeServices(), { ynab_get_user: handler });
@@ -94,8 +110,23 @@ describe('bounded dispatcher', () => {
     for (const handler of [async () => ({ ...ok, meta: { ...meta, warnings: ['x'.repeat(512 * 1024)] } }), async () => { throw new Error('TOKEN_SENTINEL'); }]) {
       const reply = await createDispatcher(services, { ynab_get_user: handler }).callTool('ynab_get_user', {});
       expect(reply.isError).toBe(true); expect(JSON.stringify(reply)).not.toContain('TOKEN_SENTINEL');
+      expectMatchingText(reply);
       expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThan(512 * 1024);
     }
+  });
+  it('bounds the complete reply when matching text doubles an individually bounded result', async () => {
+    const result: ToolResult = { ...ok, meta: { ...meta, warnings: ['x'.repeat(300 * 1024)] } };
+    const text = JSON.stringify(result);
+    expect(outputValidators.get('ynab_get_user')!(result)).toBe(true);
+    expect(Buffer.byteLength(text)).toBeLessThan(512 * 1024);
+    expect(Buffer.byteLength(JSON.stringify({ structuredContent: result, content: [{ type: 'text', text }], isError: false }))).toBeGreaterThan(512 * 1024);
+    const reply = await createDispatcher(fakeServices(), { ynab_get_user: async () => result }).callTool('ynab_get_user', {});
+    expect(errorCode(reply)).toBe('response_too_large');
+    expect(reply.structuredContent).toMatchObject({ error: { outcome: 'not_applied' } });
+    expect(reply.isError).toBe(true);
+    expect(outputValidators.get('ynab_get_user')!(reply.structuredContent)).toBe(true);
+    expectMatchingText(reply);
+    expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThan(512 * 1024);
   });
   it('bounds the response by UTF-8 bytes rather than character count', async () => {
     const d = createDispatcher(fakeServices(), { ynab_get_user: async () => {
@@ -109,9 +140,8 @@ describe('bounded dispatcher', () => {
     for (const code of ['plan_required', 'invalid'] as const) {
       const reply = await createDispatcher(fakeServices(), { ynab_get_user: async () => { throw new ToolFailure({ code: code as 'plan_required', message: 'safe', retryable: false, outcome: 'not_applied' }); } }).callTool('ynab_get_user', {});
       expect(errorCode(reply)).toBe(code === 'invalid' ? 'upstream_error' : code);
-      expect(reply.content).toHaveLength(1);
-      expect(reply.content?.[0]).toMatchObject({ type: 'text' });
-      expect(JSON.stringify(reply.content).length).toBeLessThan(150);
+      expectMatchingText(reply);
+      expect(Buffer.byteLength(JSON.stringify(reply))).toBeLessThan(512 * 1024);
     }
   });
   it('enforces cancellation before invocation and during an uncooperative handler', async () => {

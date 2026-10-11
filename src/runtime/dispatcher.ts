@@ -49,7 +49,7 @@ export function createDispatcher(services: Services, handlers: HandlerMap): Disp
       });
       const envelope = (result: ToolResult): DispatchResult => ({
         structuredContent: result,
-        content: [{ type: 'text', text: result.status === 'error' ? `YNAB tool error: ${result.error.code}.` : `YNAB tool result: ${result.status}.` }],
+        content: [{ type: 'text', text: json(result, OUTPUT_LIMIT) }],
         isError: result.status === 'error',
       });
       const validate = outputValidators.get(tool?.name ?? 'ynab_get_user')!;

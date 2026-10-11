@@ -700,7 +700,7 @@ Do not infer that read-only `goal_type` is writable from prose that mentions its
 
 ### MCP result envelope
 
-Every tool returns `structuredContent` matching its output schema plus a short `content` text block.
+Every tool returns `structuredContent` matching its output schema plus a `content` text block containing matching validated JSON for compatibility with text-only clients.
 Use `isError:true` for execution/policy/upstream errors. A dry-run result is a successful preview, not a write.
 All envelopes include `status` and `meta`. The catalog defines a discriminated union:
 
